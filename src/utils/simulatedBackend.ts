@@ -321,17 +321,18 @@ class SimulatedBackend {
           throw { status: 422, message: 'The credentials provided are incorrect.' };
         }
 
+        // Enforce only Admin and Active Member access
+        if (user.role !== 'admin' && !(user.role === 'member' && user.membership_status === 'Active')) {
+          this.addLog('AUTH', `Login Denied: User ${user.name} has role [${user.role}] or inactive status.`);
+          this.addLog('HTTP', `<-- 403 Forbidden`);
+          throw { status: 403, message: 'Access Denied. Only Admins and Active Members can access the portal.' };
+        }
+
         // Issue Sanctum Token with scopes based on role
         let abilities: string[] = [];
         switch (user.role) {
           case 'admin':
             abilities = ['*'];
-            break;
-          case 'staff':
-            abilities = ['check-in-members', 'view-members'];
-            break;
-          case 'trainer':
-            abilities = ['view-clients', 'update-workouts'];
             break;
           case 'member':
           default:
@@ -360,6 +361,7 @@ class SimulatedBackend {
             name: user.name,
             email: user.email,
             role: user.role,
+            membership_status: user.membership_status,
           },
         };
       }
@@ -376,7 +378,7 @@ class SimulatedBackend {
 
       // 3. GET /api/members
       if (method === 'GET' && path === '/api/members') {
-        requireRoles(['admin', 'staff']);
+        requireRoles(['admin']);
         
         // Parse search query
         const queryParams = new URL(url, 'http://localhost').searchParams;
@@ -502,7 +504,7 @@ class SimulatedBackend {
         
         const isKioskOrSelf = authUser?.role === 'member' && authUser.id === memberId;
         if (!isKioskOrSelf) {
-          requireRoles(['admin', 'staff']);
+          requireRoles(['admin']);
         }
 
         this.addLog('SQL', `SELECT * FROM users WHERE id = ${memberId} LIMIT 1`);
@@ -566,7 +568,7 @@ class SimulatedBackend {
 
       // 5. GET /api/check-ins
       if (method === 'GET' && path === '/api/check-ins') {
-        requireRoles(['admin', 'staff']);
+        requireRoles(['admin']);
         this.addLog('SQL', `SELECT check_ins.*, users.name FROM check_ins JOIN users ON check_ins.member_id = users.id ORDER BY created_at DESC`);
         
         this.addLog('HTTP', `<-- 200 OK`);
@@ -578,7 +580,7 @@ class SimulatedBackend {
 
       // 5.1 GET /api/bookings
       if (method === 'GET' && path === '/api/bookings') {
-        requireRoles(['admin', 'staff', 'trainer']);
+        requireRoles(['admin']);
         this.addLog('SQL', `SELECT bookings.*, users.name, users.email FROM bookings JOIN users ON bookings.member_id = users.id ORDER BY booked_at DESC`);
         
         this.addLog('HTTP', `<-- 200 OK (${this.bookings.length} bookings found)`);
@@ -602,7 +604,7 @@ class SimulatedBackend {
 
         const isSelfBooking = authUser?.role === 'member';
         if (!isSelfBooking) {
-          requireRoles(['admin', 'staff']);
+          requireRoles(['admin']);
         }
 
         const existingBookingIdx = this.bookings.findIndex(b => b.memberId === authUser?.id && b.classId === classId);
@@ -648,7 +650,7 @@ class SimulatedBackend {
 
       // 5.3 POST /api/bookings/{id}/cancel or DELETE /api/bookings/{id}
       if (path.startsWith('/api/bookings/') && (path.endsWith('/cancel') || method === 'POST')) {
-        requireRoles(['admin', 'staff']);
+        requireRoles(['admin']);
         const parts = path.split('/');
         const bookingIdString = parts[3];
         const bookingId = parseInt(bookingIdString, 10);

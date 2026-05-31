@@ -32,6 +32,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           throw new Error(errData.message || 'Login failed.');
         }
         const data = await res.json();
+        if (data.user.role !== 'admin' && !(data.user.role === 'member' && data.user.membership_status === 'Active')) {
+          throw new Error('Access Denied. Only Admins and Active Members are permitted access.');
+        }
         localStorage.setItem('auth_token', data.access_token);
         localStorage.setItem('auth_user', JSON.stringify(data.user));
       } else {
@@ -135,7 +138,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             <div className="section-divider">
               <span>Quick Role Selector</span>
             </div>
-            <div className="quick-roles-grid">
+            <div className="quick-roles-grid" style={{ gridTemplateCols: 'repeat(2, 1fr)' }}>
               <button 
                 type="button" 
                 className={`quick-role-btn ${email === 'admin@gym.com' ? 'selected' : ''}`}
@@ -146,43 +149,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               </button>
               <button 
                 type="button" 
-                className={`quick-role-btn ${email === 'receptionist@gym.com' ? 'selected' : ''}`}
-                onClick={() => handleQuickSelect('receptionist@gym.com')}
-              >
-                <Shield size={12} className="text-purple-400" />
-                <span>Staff</span>
-              </button>
-              <button 
-                type="button" 
-                className={`quick-role-btn ${email === 'trainer@gym.com' ? 'selected' : ''}`}
-                onClick={() => handleQuickSelect('trainer@gym.com')}
-              >
-                <Shield size={12} className="text-cyan-400" />
-                <span>Trainer</span>
-              </button>
-              <button 
-                type="button" 
                 className={`quick-role-btn ${email === 'ethan@gym.com' ? 'selected' : ''}`}
                 onClick={() => handleQuickSelect('ethan@gym.com')}
               >
                 <Shield size={12} className="text-green-400" />
                 <span>Member (Active)</span>
-              </button>
-              <button 
-                type="button" 
-                className={`quick-role-btn ${email === 'selena@gym.com' ? 'selected' : ''}`}
-                onClick={() => handleQuickSelect('selena@gym.com')}
-              >
-                <Shield size={12} className="text-yellow-500" />
-                <span>Member (Suspended)</span>
-              </button>
-              <button 
-                type="button" 
-                className={`quick-role-btn ${email === 'bruce@gym.com' ? 'selected' : ''}`}
-                onClick={() => handleQuickSelect('bruce@gym.com')}
-              >
-                <Shield size={12} className="text-gray-500" />
-                <span>Member (Expired)</span>
               </button>
             </div>
           </div>

@@ -16,12 +16,17 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowe
 
   const user = JSON.parse(userString);
 
+  // Enforce only Admin and Active Member accesses
+  if (user.role !== 'admin' && !(user.role === 'member' && user.membership_status === 'Active')) {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+    return <Navigate to="/login" replace />;
+  }
+
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     // If unauthorized, redirect to their allowed home panel
     if (user.role === 'member') {
       return <Navigate to="/member/dashboard" replace />;
-    } else if (user.role === 'trainer') {
-      return <Navigate to="/admin/dashboard" replace />;
     } else {
       return <Navigate to="/admin/dashboard" replace />;
     }

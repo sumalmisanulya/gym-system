@@ -61,7 +61,7 @@ function App() {
           <Route 
             path="/admin/dashboard" 
             element={
-              <ProtectedRoute allowedRoles={['admin', 'staff', 'trainer']}>
+              <ProtectedRoute allowedRoles={['admin']}>
                 <AdminDashboard onLogout={handleLogout} defaultTab="checkin" />
               </ProtectedRoute>
             } 
@@ -71,7 +71,7 @@ function App() {
           <Route 
             path="/admin/members" 
             element={
-              <ProtectedRoute allowedRoles={['admin', 'staff', 'trainer']}>
+              <ProtectedRoute allowedRoles={['admin']}>
                 <AdminDashboard onLogout={handleLogout} defaultTab="members_list" />
               </ProtectedRoute>
             } 
@@ -81,7 +81,7 @@ function App() {
           <Route 
             path="/admin/bookings" 
             element={
-              <ProtectedRoute allowedRoles={['admin', 'staff', 'trainer']}>
+              <ProtectedRoute allowedRoles={['admin']}>
                 <AdminDashboard onLogout={handleLogout} defaultTab="bookings_list" />
               </ProtectedRoute>
             } 

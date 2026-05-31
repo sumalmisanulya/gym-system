@@ -32,6 +32,27 @@ export interface SimLog {
   message: string;
 }
 
+export interface SimClass {
+  id: number;
+  name: string;
+  trainer: string;
+  time: string;
+  available: number;
+  capacity: number;
+}
+
+export interface SimBooking {
+  id: number;
+  memberId: number;
+  memberName: string;
+  memberEmail: string;
+  classId: number;
+  className: string;
+  classTime: string;
+  classTrainer: string;
+  bookedAt: string;
+}
+
 // Initial Mock Database Seed
 const initialUsers: SimUser[] = [
   {
@@ -116,11 +137,33 @@ const initialCheckIns: SimCheckIn[] = [
   },
 ];
 
+const initialClasses: SimClass[] = [
+  { id: 101, name: 'CrossFit WOD & Power', trainer: 'Marcus Aurelius', time: '08:00 AM', available: 6, capacity: 15 },
+  { id: 102, name: 'Flexibility & Flow Vinyasa', trainer: 'Sophia Vance', time: '10:00 AM', available: 14, capacity: 20 },
+  { id: 103, name: 'Full-Body Boxing Sparring', trainer: 'Alexander Mercer', time: '06:00 PM', available: 0, capacity: 12 },
+];
+
+const initialBookings: SimBooking[] = [
+  {
+    id: 1,
+    memberId: 4,
+    memberName: 'Ethan Hunt',
+    memberEmail: 'ethan@gym.com',
+    classId: 101,
+    className: 'CrossFit WOD & Power',
+    classTime: '08:00 AM',
+    classTrainer: 'Marcus Aurelius',
+    bookedAt: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+  }
+];
+
 class SimulatedBackend {
   private users: SimUser[];
   private checkIns: SimCheckIn[];
   private tokens: SimToken[];
   private logs: SimLog[];
+  private classes: SimClass[];
+  private bookings: SimBooking[];
   private listeners: (() => void)[];
   private isLiveMode: boolean;
 
@@ -129,18 +172,22 @@ class SimulatedBackend {
     const savedCheckIns = localStorage.getItem('sim_checkins');
     const savedTokens = localStorage.getItem('sim_tokens');
     const savedLogs = localStorage.getItem('sim_logs');
+    const savedClasses = localStorage.getItem('sim_classes');
+    const savedBookings = localStorage.getItem('sim_bookings');
     const savedMode = localStorage.getItem('sim_live_mode');
 
     this.users = savedUsers ? JSON.parse(savedUsers) : initialUsers;
     this.checkIns = savedCheckIns ? JSON.parse(savedCheckIns) : initialCheckIns;
     this.tokens = savedTokens ? JSON.parse(savedTokens) : [];
     this.logs = savedLogs ? JSON.parse(savedLogs) : [];
+    this.classes = savedClasses ? JSON.parse(savedClasses) : initialClasses;
+    this.bookings = savedBookings ? JSON.parse(savedBookings) : initialBookings;
     this.isLiveMode = savedMode === 'true';
     this.listeners = [];
 
     if (this.logs.length === 0) {
       this.addLog('SYSTEM', 'Virtual Gym Sanctum + MySQL Backend started.');
-      this.addLog('SQL', 'Database tables `users` and `check_ins` loaded.');
+      this.addLog('SQL', 'Database tables `users`, `check_ins`, `class_slots` and `bookings` loaded.');
     }
   }
 
@@ -149,6 +196,8 @@ class SimulatedBackend {
     localStorage.setItem('sim_checkins', JSON.stringify(this.checkIns));
     localStorage.setItem('sim_tokens', JSON.stringify(this.tokens));
     localStorage.setItem('sim_logs', JSON.stringify(this.logs));
+    localStorage.setItem('sim_classes', JSON.stringify(this.classes));
+    localStorage.setItem('sim_bookings', JSON.stringify(this.bookings));
     localStorage.setItem('sim_live_mode', this.isLiveMode.toString());
     this.notifyListeners();
   }
@@ -158,8 +207,10 @@ class SimulatedBackend {
     this.checkIns = JSON.parse(JSON.stringify(initialCheckIns));
     this.tokens = [];
     this.logs = [];
+    this.classes = JSON.parse(JSON.stringify(initialClasses));
+    this.bookings = JSON.parse(JSON.stringify(initialBookings));
     this.addLog('SYSTEM', 'Virtual Gym Sanctum + MySQL Backend reset.');
-    this.addLog('SQL', 'Database tables `users` and `check_ins` re-seeded.');
+    this.addLog('SQL', 'Database tables `users`, `check_ins`, `class_slots` and `bookings` re-seeded.');
     this.saveState();
   }
 
@@ -180,6 +231,8 @@ class SimulatedBackend {
       checkIns: this.checkIns,
       tokens: this.tokens,
       logs: this.logs,
+      classes: this.classes,
+      bookings: this.bookings,
       isLiveMode: this.isLiveMode,
     };
   }
@@ -523,15 +576,123 @@ class SimulatedBackend {
         };
       }
 
+      // 5.1 GET /api/bookings
+      if (method === 'GET' && path === '/api/bookings') {
+        requireRoles(['admin', 'staff', 'trainer']);
+        this.addLog('SQL', `SELECT bookings.*, users.name, users.email FROM bookings JOIN users ON bookings.member_id = users.id ORDER BY booked_at DESC`);
+        
+        this.addLog('HTTP', `<-- 200 OK (${this.bookings.length} bookings found)`);
+        return {
+          bookings: this.bookings,
+        };
+      }
+
+      // 5.2 POST /api/classes/{id}/book
+      if (method === 'POST' && path.startsWith('/api/classes/') && path.endsWith('/book')) {
+        requireAuth();
+        const classIdString = path.split('/')[3];
+        const classId = parseInt(classIdString, 10);
+        
+        this.addLog('SQL', `SELECT * FROM class_slots WHERE id = ${classId} LIMIT 1`);
+        const gymClass = this.classes.find(c => c.id === classId);
+        if (!gymClass) {
+          this.addLog('HTTP', `<-- 404 Class Not Found`);
+          throw { status: 404, message: 'Gym class slot not found.' };
+        }
+
+        const isSelfBooking = authUser?.role === 'member';
+        if (!isSelfBooking) {
+          requireRoles(['admin', 'staff']);
+        }
+
+        const existingBookingIdx = this.bookings.findIndex(b => b.memberId === authUser?.id && b.classId === classId);
+        if (existingBookingIdx !== -1) {
+          // Cancel booking
+          this.bookings.splice(existingBookingIdx, 1);
+          gymClass.available = Math.min(gymClass.capacity, gymClass.available + 1);
+          this.addLog('SQL', `DELETE FROM bookings WHERE member_id = ${authUser?.id} AND class_id = ${classId}`);
+          this.addLog('SQL', `UPDATE class_slots SET available = ${gymClass.available} WHERE id = ${classId}`);
+          this.addLog('AUTH', `Laravel Sanctum: Scopes check: Authorized for scope [book-classes].`);
+          this.addLog('AUTH', `Booking Cancelled: ${authUser?.name} cancelled class ${gymClass.name}`);
+          this.saveState();
+          this.addLog('HTTP', `<-- 200 OK`);
+          return { message: 'Booking cancelled successfully.' };
+        } else {
+          // Create booking
+          if (gymClass.available <= 0) {
+            this.addLog('HTTP', `<-- 403 Class Fully Booked`);
+            throw { status: 403, message: 'Class is fully booked.' };
+          }
+          const newBooking: SimBooking = {
+            id: Date.now() + Math.round(Math.random() * 100),
+            memberId: authUser!.id,
+            memberName: authUser!.name,
+            memberEmail: authUser!.email,
+            classId: gymClass.id,
+            className: gymClass.name,
+            classTime: gymClass.time,
+            classTrainer: gymClass.trainer,
+            bookedAt: new Date().toISOString()
+          };
+          this.bookings.unshift(newBooking);
+          gymClass.available = Math.max(0, gymClass.available - 1);
+          this.addLog('SQL', `INSERT INTO bookings (member_id, class_id, booked_at) VALUES (${authUser?.id}, ${classId}, NOW())`);
+          this.addLog('SQL', `UPDATE class_slots SET available = ${gymClass.available} WHERE id = ${classId}`);
+          this.addLog('AUTH', `Laravel Sanctum: Scopes check: Authorized for scope [book-classes].`);
+          this.addLog('AUTH', `Booking Success: ${authUser?.name} registered for class ${gymClass.name}`);
+          this.saveState();
+          this.addLog('HTTP', `<-- 200 OK`);
+          return { message: 'Booking confirmed successfully.' };
+        }
+      }
+
+      // 5.3 POST /api/bookings/{id}/cancel or DELETE /api/bookings/{id}
+      if (path.startsWith('/api/bookings/') && (path.endsWith('/cancel') || method === 'POST')) {
+        requireRoles(['admin', 'staff']);
+        const parts = path.split('/');
+        const bookingIdString = parts[3];
+        const bookingId = parseInt(bookingIdString, 10);
+        
+        const bookingIdx = this.bookings.findIndex(b => b.id === bookingId);
+        if (bookingIdx === -1) {
+          this.addLog('HTTP', `<-- 404 Booking Not Found`);
+          throw { status: 404, message: 'Booking not found.' };
+        }
+        
+        const booking = this.bookings[bookingIdx];
+        const gymClass = this.classes.find(c => c.id === booking.classId);
+        if (gymClass) {
+          gymClass.available = Math.min(gymClass.capacity, gymClass.available + 1);
+          this.addLog('SQL', `UPDATE class_slots SET available = ${gymClass.available} WHERE id = ${booking.classId}`);
+        }
+        
+        this.bookings.splice(bookingIdx, 1);
+        this.addLog('SQL', `DELETE FROM bookings WHERE id = ${bookingId}`);
+        this.addLog('AUTH', `Admin/Staff cancelled booking ID: ${bookingId} for member ${booking.memberName}`);
+        this.saveState();
+        this.addLog('HTTP', `<-- 200 OK`);
+        return { message: 'Booking cancelled successfully by administrator.' };
+      }
+
       // 6. GET /api/member/dashboard
       if (method === 'GET' && path === '/api/member/dashboard') {
         requireRoles(['member']);
         
         this.addLog('SQL', `SELECT * FROM memberships WHERE user_id = ${authUser?.id} LIMIT 1`);
         this.addLog('SQL', `SELECT * FROM bmi_logs WHERE user_id = ${authUser?.id} ORDER BY recorded_at DESC`);
+        this.addLog('SQL', `SELECT * FROM class_slots`);
 
         const status = authUser?.membership_status || 'Active';
         const daysLeft = authUser?.days_left ?? 0;
+
+        // Check if member has booked each class slot
+        const classSlotsWithBookingInfo = this.classes.map(c => {
+          const isBooked = this.bookings.some(b => b.memberId === authUser?.id && b.classId === c.id);
+          return {
+            ...c,
+            booked: isBooked
+          };
+        });
 
         this.addLog('HTTP', `<-- 200 OK`);
         return {
@@ -548,11 +709,7 @@ class SimulatedBackend {
             { date: 'Apr', bmi: 24.5 },
             { date: 'May', bmi: 23.8 },
           ],
-          class_slots: [
-            { id: 101, name: 'CrossFit WOD & Power', trainer: 'Marcus Aurelius', time: '08:00 AM', available: 6 },
-            { id: 102, name: 'Flexibility & Flow Vinyasa', trainer: 'Sophia Vance', time: '10:00 AM', available: 14 },
-            { id: 103, name: 'Full-Body Boxing Sparring', trainer: 'Alexander Mercer', time: '06:00 PM', available: 0 },
-          ],
+          class_slots: classSlotsWithBookingInfo,
         };
       }
 

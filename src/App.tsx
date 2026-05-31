@@ -77,6 +77,16 @@ function App() {
             } 
           />
 
+          {/* Admin Bookings Route */}
+          <Route 
+            path="/admin/bookings" 
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'staff', 'trainer']}>
+                <AdminDashboard onLogout={handleLogout} defaultTab="bookings_list" />
+              </ProtectedRoute>
+            } 
+          />
+
           {/* Member Dashboard Route */}
           <Route 
             path="/member/dashboard" 

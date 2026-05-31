@@ -74,25 +74,37 @@ export const MemberDashboard: React.FC<MemberDashboardProps> = ({ onLogout }) =>
     return unsubscribe;
   }, []);
 
-  const handleBookClass = (classId: number) => {
-    setClasses(prev => prev.map(cls => {
-      if (cls.id === classId) {
-        const isBooked = !cls.booked;
-        // Simulating the API action: logs to terminal and decreases seats
-        backendSim.addLog('AUTH', `Sanctum Scopes check: Authorized for scope [book-classes].`);
-        backendSim.addLog('HTTP', `POST /api/classes/${classId}/book - ${isBooked ? 'Booked' : 'Cancelled'} class: ${cls.name}`);
-        backendSim.addLog('SQL', `UPDATE class_slots SET available = ${cls.available + (isBooked ? -1 : 1)} WHERE id = ${classId}`);
-        return {
-          ...cls,
-          booked: isBooked,
-          available: cls.available + (isBooked ? -1 : 1)
-        };
+  const handleBookClass = async (classId: number) => {
+    setFeedback(null);
+    try {
+      let data;
+      if (backendSim.getDbState().isLiveMode) {
+        const res = await fetch(`http://localhost:8000/api/classes/${classId}/book`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.message || 'Booking update failed.');
+        }
+        data = await res.json();
+      } else {
+        data = await backendSim.handleRequest('POST', `/api/classes/${classId}/book`, null, {
+          'Authorization': `Bearer ${token}`
+        });
       }
-      return cls;
-    }));
-    
-    setFeedback('Class registration status updated successfully.');
-    setTimeout(() => setFeedback(null), 3000);
+
+      setFeedback(data.message || 'Class registration status updated successfully.');
+      setTimeout(() => setFeedback(null), 3000);
+      loadData();
+    } catch (err: any) {
+      console.error(err);
+      setFeedback(err.message || 'Failed to update class registration.');
+      setTimeout(() => setFeedback(null), 3000);
+    }
   };
 
   const handleLogoutClick = () => {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { backendSim } from '../utils/simulatedBackend';
-import type { SimLog, SimUser, SimCheckIn, SimToken } from '../utils/simulatedBackend';
+import type { SimLog, SimUser, SimCheckIn, SimToken, SimBooking } from '../utils/simulatedBackend';
 import { Terminal, Database, Key, Play, RotateCcw, AlertTriangle, ShieldCheck, ChevronUp, ChevronDown } from 'lucide-react';
 
 interface DevTerminalProps {
@@ -9,7 +9,7 @@ interface DevTerminalProps {
 
 export const DevTerminal: React.FC<DevTerminalProps> = ({ onStateChange }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'logs' | 'db_users' | 'db_checkins' | 'tokens'>('logs');
+  const [activeTab, setActiveTab] = useState<'logs' | 'db_users' | 'db_checkins' | 'db_bookings' | 'tokens'>('logs');
   const [dbState, setDbState] = useState(backendSim.getDbState());
 
   useEffect(() => {
@@ -90,6 +90,13 @@ export const DevTerminal: React.FC<DevTerminalProps> = ({ onStateChange }) => {
               >
                 <Database size={12} />
                 check_ins Table
+              </button>
+              <button 
+                className={`tab-btn ${activeTab === 'db_bookings' ? 'active' : ''}`}
+                onClick={() => setActiveTab('db_bookings')}
+              >
+                <Database size={12} />
+                bookings Table
               </button>
               <button 
                 className={`tab-btn ${activeTab === 'tokens' ? 'active' : ''}`}
@@ -202,6 +209,43 @@ export const DevTerminal: React.FC<DevTerminalProps> = ({ onStateChange }) => {
                           <td className="text-white">{c.member_name}</td>
                           <td>{c.checked_in_by}</td>
                           <td className="text-gray-400">{new Date(c.timestamp).toLocaleString()}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {activeTab === 'db_bookings' && (
+              <div className="table-view">
+                <table className="db-table">
+                  <thead>
+                    <tr>
+                      <th>id</th>
+                      <th>member_id</th>
+                      <th>member_name</th>
+                      <th>class_name</th>
+                      <th>trainer</th>
+                      <th>time</th>
+                      <th>booked_at</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!dbState.bookings || dbState.bookings.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center text-gray-500 py-4 italic">bookings table is empty.</td>
+                      </tr>
+                    ) : (
+                      dbState.bookings.map((b: SimBooking) => (
+                        <tr key={b.id}>
+                          <td>{b.id}</td>
+                          <td>{b.memberId}</td>
+                          <td className="text-white font-semibold">{b.memberName}</td>
+                          <td>{b.className}</td>
+                          <td>{b.classTrainer}</td>
+                          <td className="text-purple-400">{b.classTime}</td>
+                          <td className="text-gray-400">{new Date(b.bookedAt).toLocaleString()}</td>
                         </tr>
                       ))
                     )}

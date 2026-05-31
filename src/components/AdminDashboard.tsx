@@ -1,23 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { backendSim } from '../utils/simulatedBackend';
-import type { SimUser, SimCheckIn } from '../utils/simulatedBackend';
+import type { SimUser, SimCheckIn, SimBooking } from '../utils/simulatedBackend';
 import { 
   Users, Search, CheckCircle, AlertOctagon, Clock, LogOut, 
-  Settings, TrendingUp, Bell, Shield, Lock, Award
+  Settings, TrendingUp, Bell, Shield, Lock, Award, Calendar
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface AdminDashboardProps {
   onLogout: () => void;
-  defaultTab?: 'checkin' | 'packages' | 'billing' | 'members_list';
+  defaultTab?: 'checkin' | 'packages' | 'billing' | 'members_list' | 'bookings_list';
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, defaultTab }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [members, setMembers] = useState<SimUser[]>([]);
   const [checkIns, setCheckIns] = useState<SimCheckIn[]>([]);
+  const [bookings, setBookings] = useState<SimBooking[]>([]);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
-  const [currentTab, setCurrentTab] = useState<'checkin' | 'packages' | 'billing' | 'members_list'>(defaultTab || 'checkin');
+  const [currentTab, setCurrentTab] = useState<'checkin' | 'packages' | 'billing' | 'members_list' | 'bookings_list'>(defaultTab || 'checkin');
 
   // Member editing states
   const [editingMember, setEditingMember] = useState<SimUser | null>(null);
@@ -168,6 +169,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, defaul
         });
         const cData = await cRes.json();
         setCheckIns(cData.check_ins || []);
+
+        const bRes = await fetch('http://localhost:8000/api/bookings', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const bData = await bRes.json();
+        setBookings(bData.bookings || []);
       } else {
         // Simulated API call
         const mData = await backendSim.handleRequest('GET', `/api/members?query=${searchQuery}`, null, {
@@ -179,6 +186,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, defaul
           'Authorization': `Bearer ${token}`
         });
         setCheckIns(cData.check_ins);
+
+        const bData = await backendSim.handleRequest('GET', '/api/bookings', null, {
+          'Authorization': `Bearer ${token}`
+        });
+        setBookings(bData.bookings || []);
       }
     } catch (err: any) {
       console.error(err);
@@ -229,6 +241,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, defaul
         type: 'error', 
         message: err.message || 'Failed to check in member.' 
       });
+    }
+  };
+
+  const handleCancelBooking = async (bookingId: number) => {
+    try {
+      if (backendSim.getDbState().isLiveMode) {
+        const res = await fetch(`http://localhost:8000/api/bookings/${bookingId}/cancel`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.message || 'Failed to cancel booking.');
+        }
+      } else {
+        await backendSim.handleRequest('POST', `/api/bookings/${bookingId}/cancel`, null, {
+          'Authorization': `Bearer ${token}`
+        });
+      }
+
+      setFeedback({ type: 'success', message: 'Successfully cancelled booking.' });
+      loadData();
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err: any) {
+      setFeedback({ type: 'error', message: err.message || 'Failed to cancel booking.' });
+      setTimeout(() => setFeedback(null), 3000);
     }
   };
 
@@ -297,6 +338,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, defaul
           >
             <Users size={16} />
             Member Directory
+          </button>
+          <button 
+            className={`nav-item ${currentTab === 'bookings_list' ? 'active' : ''}`}
+            onClick={() => {
+              setCurrentTab('bookings_list');
+              navigate('/admin/bookings');
+            }}
+          >
+            <Calendar size={16} />
+            Class Bookings
           </button>
           <button 
             className={`nav-item ${currentTab === 'packages' ? 'active' : ''}`}
@@ -777,6 +828,95 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, defaul
                         </td>
                       </tr>
                     ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {currentTab === 'bookings_list' && (
+          <div className="panel bookings-directory-panel animate-fadeIn">
+            <div className="panel-header">
+              <h2>Class Reservations Directory</h2>
+              <span className="tag">{bookings.length} reservations loaded</span>
+            </div>
+
+            <p className="section-desc">Audit registered member class bookings, verify details, or release reserved slots.</p>
+
+            <div className="logs-table-wrapper mt-4">
+              <table className="logs-history-table">
+                <thead>
+                  <tr>
+                    <th>Booking ID</th>
+                    <th>Member Info</th>
+                    <th>Class Details</th>
+                    <th>Date & Time</th>
+                    <th>Booked On</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bookings.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-center text-gray-500 py-6 italic">No class reservations found.</td>
+                    </tr>
+                  ) : (
+                    bookings.map((booking) => {
+                      const memberObj = backendSim.getDbState().users.find(u => u.id === booking.memberId);
+                      const profilePhoto = memberObj?.profile_photo || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150&h=150';
+                      return (
+                        <tr key={booking.id}>
+                          <td className="font-mono text-xs">#{booking.id.toString().padStart(5, '0')}</td>
+                          <td>
+                            <div className="flex items-center gap-2">
+                              <img 
+                                src={profilePhoto} 
+                                alt={booking.memberName} 
+                                style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border-subtle)' }} 
+                              />
+                              <div className="flex flex-col text-left" style={{ marginLeft: '8px' }}>
+                                <span className="text-white font-semibold">{booking.memberName}</span>
+                                <span className="text-[10px] text-gray-500">{booking.memberEmail}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="flex flex-col">
+                              <span className="text-xs text-white font-semibold">{booking.className}</span>
+                              <span className="text-[10px] text-purple-400">Trainer: {booking.classTrainer}</span>
+                            </div>
+                          </td>
+                          <td className="font-mono text-xs">
+                            <span className="class-time-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <Clock size={11} />
+                              {booking.classTime}
+                            </span>
+                          </td>
+                          <td className="font-mono text-[10px] text-gray-400">
+                            {new Date(booking.bookedAt).toLocaleString()}
+                          </td>
+                          <td>
+                            <button
+                              className="package-edit-btn cancel-btn"
+                              disabled={user.role !== 'admin' && user.role !== 'staff'}
+                              onClick={() => handleCancelBooking(booking.id)}
+                              title={user.role === 'admin' || user.role === 'staff' ? 'Cancel member booking' : 'Requires Admin/Staff rights'}
+                              style={{ padding: '6px 12px', fontSize: '11px', display: 'flex', alignContent: 'center', gap: '4px' }}
+                            >
+                              {user.role === 'admin' || user.role === 'staff' ? (
+                                <span>Cancel Booking</span>
+                              ) : (
+                                <>
+                                  <Lock size={10} style={{ alignSelf: 'center' }} />
+                                  <span>Locked</span>
+                                </>
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
